@@ -3,21 +3,13 @@ package ibm.eda.kc.orderms.domain;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 
 import javax.enterprise.context.ApplicationScoped;
 import javax.inject.Inject;
-import javax.transaction.TransactionScoped;
 import javax.transaction.Transactional;
 
-import org.eclipse.microprofile.reactive.messaging.Channel;
-import org.eclipse.microprofile.reactive.messaging.Emitter;
-import org.eclipse.microprofile.reactive.messaging.Message;
-
-import ibm.eda.kc.orderms.infra.events.order.OrderEvent;
 import ibm.eda.kc.orderms.infra.events.order.OrderEventProducer;
 import ibm.eda.kc.orderms.infra.repo.OrderRepository;
-import io.smallrye.reactive.messaging.kafka.api.OutgoingKafkaRecordMetadata;
 
 
 @ApplicationScoped
@@ -46,7 +38,7 @@ public class OrderService {
 		order.updateDate= order.creationDate;
         repository.addOrder(order);
 		producer.sendOrderCreatedEventFrom(order);
-        
+
         return order;
     }
 

@@ -2,9 +2,11 @@ receivers:
   otlp:
     protocols:
       grpc:
-        endpoint: otel-collector:4317
+      http:
 
 exporters:
+  otlp:
+    endpoint: otelcol:4317
   jaeger:
     endpoint: jaeger-all-in-one:14250
     tls:
@@ -22,4 +24,4 @@ service:
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [jaeger]
+      exporters: [jaeger, otlp]

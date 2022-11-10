@@ -1,11 +1,15 @@
 package ibm.eda.kc.orderms.infra.events.reefer;
 
+import java.util.Optional;
 import java.util.concurrent.CompletionStage;
 import java.util.logging.Logger;
 
 import javax.enterprise.context.ApplicationScoped;
 import javax.inject.Inject;
 
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.context.Scope;
+import io.smallrye.reactive.messaging.TracingMetadata;
 import org.eclipse.microprofile.reactive.messaging.Incoming;
 import org.eclipse.microprofile.reactive.messaging.Message;
 
@@ -27,18 +31,25 @@ public class ReeferAgent {
     OrderRepository repo;
 
     @Inject
-	public OrderEventProducer producer;
-    
+    public OrderEventProducer producer;
+
     @Incoming("reefers")
-    public CompletionStage<Void> processReeferEvent(Message<ReeferEvent> messageWithReeferEvent){
+    public CompletionStage<Void> processReeferEvent(Message<ReeferEvent> messageWithReeferEvent) {
         logger.info("Received reefer event for : " + messageWithReeferEvent.getPayload().reeferID);
         ReeferEvent oe = messageWithReeferEvent.getPayload();
-        switch( oe.getType()){
-            case ReeferEvent.REEFER_ALLOCATED_TYPE:
-                ReeferEvent re=processReeferAllocatedEvent(oe);
-                break;
-            default:
-                break;
+        Optional<TracingMetadata> optionalTracingMetadata = TracingMetadata.fromMessage(messageWithReeferEvent);
+        if (optionalTracingMetadata.isPresent()) {
+            TracingMetadata tracingMetadata = optionalTracingMetadata.get();
+            try (Scope scope = tracingMetadata.getCurrentContext().makeCurrent()) {
+                logger.info("TraceId " + Span.current().getSpanContext().getTraceId());
+                switch (oe.getType()) {
+                    case ReeferEvent.REEFER_ALLOCATED_TYPE:
+                        ReeferEvent re = processReeferAllocatedEvent(oe);
+                        break;
+                    default:
+                        break;
+                }
+            }
         }
         return messageWithReeferEvent.ack();
     }
@@ -47,8 +58,8 @@ public class ReeferAgent {
      * When order created, search for reefers close to the pickup location,
      * add them in the container ids and send an event as ReeferAllocated
      */
-    public ReeferEvent processReeferAllocatedEvent( ReeferEvent re){
-        ReeferAllocated ra = (ReeferAllocated)re.payload;
+    public ReeferEvent processReeferAllocatedEvent(ReeferEvent re) {
+        ReeferAllocated ra = (ReeferAllocated) re.payload;
         ShippingOrder order = repo.findById(ra.orderID);
         if (order != null) {
             order.containerID = ra.reeferIDs;
@@ -60,21 +71,21 @@ public class ReeferAgent {
         } else {
             logger.warning(ra.orderID + " not found in repository");
         }
-        
+
         return re;
     }
 
     @Scheduled(cron = "{reefer.cron.expr}")
     void cronJobForReeferAnswerNotReceived() {
         // badly done - brute force as of now
-        for(ShippingOrder o : repo.getAll()) {
+        for (ShippingOrder o : repo.getAll()) {
             if (o.status.equals(ShippingOrder.PENDING_STATUS)) {
                 if (o.voyageID != null) {
                     o.status = ShippingOrder.ONHOLD_STATUS;
                     producer.sendOrderUpdateEventFrom(o);
                 }
-            } 
+            }
         }
     }
- 
+
 }
