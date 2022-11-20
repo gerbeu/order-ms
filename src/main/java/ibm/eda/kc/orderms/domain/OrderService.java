@@ -2,6 +2,7 @@ package ibm.eda.kc.orderms.domain;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import javax.enterprise.context.ApplicationScoped;
@@ -51,7 +52,7 @@ public class OrderService {
     @Transactional
     public void cancelOrder(ShippingOrder order) {
         order.status = ShippingOrder.CANCELLED_STATUS;
-        producer.sendOrderUpdateEventFrom(order);
+        producer.sendOrderUpdateEventFrom(order, Optional.empty());
         repository.updateOrder(order);
     }
 }

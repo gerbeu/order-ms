@@ -54,7 +54,7 @@ public class VoyageAgent {
                 createProcessedVoyageEventSpan(voyageEvent, context);
                 switch (voyageEvent.getType()) {
                     case VoyageEvent.TYPE_VOYAGE_ASSIGNED:
-                        VoyageEvent voyageAssignEvent = processVoyageAssignEvent(voyageEvent);
+                        VoyageEvent voyageAssignEvent = processVoyageAssignEvent(voyageEvent, Optional.of(context));
                         break;
                     default:
                         break;
@@ -80,7 +80,7 @@ public class VoyageAgent {
     }
 
     @Transactional
-    public VoyageEvent processVoyageAssignEvent(VoyageEvent ve) {
+    public VoyageEvent processVoyageAssignEvent(VoyageEvent ve, Optional<Context> optionalContext) {
         logger.info("In processVoyageAssignEvent");
         VoyageAllocated ra = (VoyageAllocated) ve.payload;
         ShippingOrder order = repo.findById(ra.orderID);
@@ -88,7 +88,7 @@ public class VoyageAgent {
             order.voyageID = ve.voyageID;
             if (order.containerID != null) {
                 order.status = ShippingOrder.ASSIGNED_STATUS;
-                producer.sendOrderUpdateEventFrom(order);
+                producer.sendOrderUpdateEventFrom(order, optionalContext);
             }
             repo.updateOrder(order);
         } else {
@@ -106,7 +106,7 @@ public class VoyageAgent {
             if (o.status.equals(ShippingOrder.PENDING_STATUS)) {
                 if (o.containerID != null) {
                     o.status = ShippingOrder.ONHOLD_STATUS;
-                    producer.sendOrderUpdateEventFrom(o);
+                    producer.sendOrderUpdateEventFrom(o, Optional.empty());
                 }
             }
         }

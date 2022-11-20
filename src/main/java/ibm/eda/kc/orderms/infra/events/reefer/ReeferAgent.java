@@ -54,7 +54,7 @@ public class ReeferAgent {
                 createProcessedReeferEventSpan(reeferEvent, context);
                 switch (reeferEvent.getType()) {
                     case ReeferEvent.REEFER_ALLOCATED_TYPE:
-                        ReeferEvent reeferAllocatedEvent = processReeferAllocatedEvent(reeferEvent);
+                        ReeferEvent reeferAllocatedEvent = processReeferAllocatedEvent(reeferEvent, Optional.of(context));
                         break;
                     default:
                         break;
@@ -84,7 +84,7 @@ public class ReeferAgent {
      * When order created, search for reefers close to the pickup location,
      * add them in the container ids and send an event as ReeferAllocated
      */
-    public ReeferEvent processReeferAllocatedEvent(ReeferEvent re) {
+    public ReeferEvent processReeferAllocatedEvent(ReeferEvent re, Optional<Context> optionalContext) {
         logger.info("In processReeferAllocatedEvent");
         ReeferAllocated ra = (ReeferAllocated) re.payload;
         ShippingOrder order = repo.findById(ra.orderID);
@@ -92,7 +92,7 @@ public class ReeferAgent {
             order.containerID = ra.reeferIDs;
             if (order.voyageID != null) {
                 order.status = ShippingOrder.ASSIGNED_STATUS;
-                producer.sendOrderUpdateEventFrom(order);
+                producer.sendOrderUpdateEventFrom(order, optionalContext);
             }
             repo.updateOrder(order);
         } else {
@@ -109,7 +109,7 @@ public class ReeferAgent {
             if (o.status.equals(ShippingOrder.PENDING_STATUS)) {
                 if (o.voyageID != null) {
                     o.status = ShippingOrder.ONHOLD_STATUS;
-                    producer.sendOrderUpdateEventFrom(o);
+                    producer.sendOrderUpdateEventFrom(o, Optional.empty());
                 }
             }
         }

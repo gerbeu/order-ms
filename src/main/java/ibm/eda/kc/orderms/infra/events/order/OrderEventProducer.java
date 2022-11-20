@@ -1,6 +1,7 @@
 package ibm.eda.kc.orderms.infra.events.order;
 
 import java.text.MessageFormat;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.logging.Logger;
 
@@ -34,10 +35,10 @@ public class OrderEventProducer {
         oe.type = OrderEvent.ORDER_CREATED_TYPE;
         OrderCreatedEvent oce = new OrderCreatedEvent(order.getDestinationAddress().getCity(), order.getPickupAddress().getCity());
         oe.payload = oce;
-        sendOrder(oe.orderID, oe);
+        sendOrder(oe.orderID, oe, Optional.empty());
     }
 
-    public void sendOrderUpdateEventFrom(ShippingOrder order) {
+    public void sendOrderUpdateEventFrom(ShippingOrder order, Optional<Context> optionalContext) {
         OrderEvent oe = createOrderEvent(order);
         oe.type = OrderEvent.ORDER_UPDATED_TYPE;
         oe.status = order.status;
@@ -45,13 +46,20 @@ public class OrderEventProducer {
         oce.reeferIDs = order.containerID;
         oce.voyageID = order.voyageID;
         oe.payload = oce;
-        sendOrder(oe.orderID, oe);
+        sendOrder(oe.orderID, oe, optionalContext);
     }
 
 
-    public void sendOrder(String key, OrderEvent orderEvent) {
+    public void sendOrder(String key, OrderEvent orderEvent, Optional<Context> optionalContext) {
         logger.info("key " + key + " order event " + orderEvent.orderID + " ts: " + orderEvent.timestampMillis);
-        Context context = Context.current();
+        if(optionalContext.isPresent()) {
+            sendOrderWithContext(key, orderEvent, optionalContext.get());
+        } else {
+            sendOrderWithContext(key, orderEvent, Context.current());
+        }
+    }
+
+    private void sendOrderWithContext(String key, OrderEvent orderEvent, Context context) {
         createOrderEventProducedSpan(orderEvent, context);
         eventProducer.send(Message.of(orderEvent)
                 .addMetadata(OutgoingKafkaRecordMetadata.<String>builder().withKey(key).build())
