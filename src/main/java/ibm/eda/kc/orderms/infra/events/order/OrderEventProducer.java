@@ -1,10 +1,16 @@
 package ibm.eda.kc.orderms.infra.events.order;
 
+import java.text.MessageFormat;
 import java.util.concurrent.CompletableFuture;
 import java.util.logging.Logger;
 
 import javax.enterprise.context.ApplicationScoped;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectWriter;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanBuilder;
 import io.opentelemetry.context.Context;
 import io.smallrye.reactive.messaging.TracingMetadata;
 import org.eclipse.microprofile.reactive.messaging.Channel;
@@ -13,6 +19,8 @@ import org.eclipse.microprofile.reactive.messaging.Message;
 
 import ibm.eda.kc.orderms.domain.ShippingOrder;
 import io.smallrye.reactive.messaging.kafka.api.OutgoingKafkaRecordMetadata;
+
+import static io.smallrye.reactive.messaging.kafka.KafkaConnector.TRACER;
 
 @ApplicationScoped
 public class OrderEventProducer {
@@ -43,6 +51,8 @@ public class OrderEventProducer {
 
     public void sendOrder(String key, OrderEvent orderEvent) {
         logger.info("key " + key + " order event " + orderEvent.orderID + " ts: " + orderEvent.timestampMillis);
+        Context context = Context.current();
+        createOrderEventProducedSpan(orderEvent, context);
         eventProducer.send(Message.of(orderEvent)
                 .addMetadata(OutgoingKafkaRecordMetadata.<String>builder().withKey(key).build())
                 .withAck(() -> {
@@ -51,8 +61,23 @@ public class OrderEventProducer {
                 .withNack(throwable -> {
                     return CompletableFuture.completedFuture(null);
                 })
-                .addMetadata(TracingMetadata.withCurrent(Context.current()))
+                .addMetadata(TracingMetadata.withCurrent(context))
         );
+    }
+
+    private void createOrderEventProducedSpan(final OrderEvent orderEvent, final Context context) {
+        final String spanName = MessageFormat.format("produced event[{0}]", orderEvent.getType());
+        final SpanBuilder spanBuilder = TRACER.spanBuilder(spanName).setParent(context);
+        final Span span = spanBuilder.startSpan();
+        final ObjectWriter ow = new ObjectMapper().writer().withDefaultPrettyPrinter();
+        try {
+            final String orderEventJson = ow.writeValueAsString(orderEvent);
+            span.setAttribute("produced.event", orderEventJson);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+        } finally {
+            span.end();
+        }
     }
 
     private OrderEvent createOrderEvent(ShippingOrder order) {

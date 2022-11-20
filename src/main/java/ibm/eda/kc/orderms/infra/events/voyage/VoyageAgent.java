@@ -1,5 +1,6 @@
 package ibm.eda.kc.orderms.infra.events.voyage;
 
+import java.text.MessageFormat;
 import java.util.Optional;
 import java.util.concurrent.CompletionStage;
 import java.util.logging.Logger;
@@ -8,7 +9,12 @@ import javax.enterprise.context.ApplicationScoped;
 import javax.inject.Inject;
 import javax.transaction.Transactional;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectWriter;
 import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanBuilder;
+import io.opentelemetry.context.Context;
 import io.opentelemetry.context.Scope;
 import io.smallrye.reactive.messaging.TracingMetadata;
 import org.eclipse.microprofile.reactive.messaging.Incoming;
@@ -18,6 +24,8 @@ import ibm.eda.kc.orderms.domain.ShippingOrder;
 import ibm.eda.kc.orderms.infra.events.order.OrderEventProducer;
 import ibm.eda.kc.orderms.infra.repo.OrderRepository;
 import io.quarkus.scheduler.Scheduled;
+
+import static io.smallrye.reactive.messaging.kafka.KafkaConnector.TRACER;
 
 /**
  * Listen to voyages topic to process voyage allocation
@@ -37,15 +45,16 @@ public class VoyageAgent {
     @Incoming("voyages")
     public CompletionStage<Void> processVoyageEvent(Message<VoyageEvent> messageWithVoyageEvent) {
         logger.info("Received voyage event for : " + messageWithVoyageEvent.getPayload().voyageID);
-        VoyageEvent oe = messageWithVoyageEvent.getPayload();
+        VoyageEvent voyageEvent = messageWithVoyageEvent.getPayload();
         Optional<TracingMetadata> optionalTracingMetadata = TracingMetadata.fromMessage(messageWithVoyageEvent);
         if (optionalTracingMetadata.isPresent()) {
             TracingMetadata tracingMetadata = optionalTracingMetadata.get();
-            try (Scope scope = tracingMetadata.getCurrentContext().makeCurrent()) {
-                logger.info("TraceId " + Span.current().getSpanContext().getTraceId());
-                switch (oe.getType()) {
+            Context context = tracingMetadata.getCurrentContext();
+            try (Scope scope = context.makeCurrent()) {
+                createProcessedVoyageEventSpan(voyageEvent, context);
+                switch (voyageEvent.getType()) {
                     case VoyageEvent.TYPE_VOYAGE_ASSIGNED:
-                        VoyageEvent re = processVoyageAssignEvent(oe);
+                        VoyageEvent voyageAssignEvent = processVoyageAssignEvent(voyageEvent);
                         break;
                     default:
                         break;
@@ -55,8 +64,24 @@ public class VoyageAgent {
         return messageWithVoyageEvent.ack();
     }
 
+    private void createProcessedVoyageEventSpan(final VoyageEvent voyageEvent, final Context context) {
+        final String spanName = MessageFormat.format("processed event[{0}]", voyageEvent.getType());
+        SpanBuilder spanBuilder = TRACER.spanBuilder(spanName).setParent(context);
+        Span span = spanBuilder.startSpan();
+        ObjectWriter ow = new ObjectMapper().writer().withDefaultPrettyPrinter();
+        try {
+            String voyageEventJson = ow.writeValueAsString(voyageEvent);
+            span.setAttribute("processed.event", voyageEventJson);
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+        } finally {
+            span.end();
+        }
+    }
+
     @Transactional
     public VoyageEvent processVoyageAssignEvent(VoyageEvent ve) {
+        logger.info("In processVoyageAssignEvent");
         VoyageAllocated ra = (VoyageAllocated) ve.payload;
         ShippingOrder order = repo.findById(ra.orderID);
         if (order != null) {
