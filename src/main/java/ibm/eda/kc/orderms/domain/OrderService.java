@@ -11,6 +11,7 @@ import javax.transaction.Transactional;
 
 import ibm.eda.kc.orderms.infra.events.order.OrderEventProducer;
 import ibm.eda.kc.orderms.infra.repo.OrderRepository;
+import io.opentelemetry.context.Context;
 
 
 @ApplicationScoped
